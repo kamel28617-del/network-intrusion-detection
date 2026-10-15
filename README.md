@@ -4,8 +4,14 @@ Machine-learning NIDS trained on the CIC-IDS2017 dataset, with an interactive St
 
 > The dashboard replays held-out test flows as a simulated alert feed. It does **not** analyze live traffic.
 
-![Dashboard overview](reports/screenshots/dashboard_overview.jpg)
 
+## Dashboard
+
+![Overview](reports/screenshots/dashboard_overview.jpg)
+
+![Alerts](reports/screenshots/dashboard_alerts.jpg)
+
+![Additional view](reports/screenshots/dashboard_extra.jpg)
 ## What it does
 
 - Cleans and deduplicates CIC-IDS2017 flow records.
@@ -77,7 +83,6 @@ Takeaway: the supervised model ranks most unseen attacks above benign traffic bu
 
 Features describing the server's replies (backward packet length, segment size, bytes) and initial TCP window sizes matter most. Many features are strongly correlated, so look at feature groups rather than exact ranks.
 
-![Alerts](reports/screenshots/dashboard_alerts.jpg)
 
 ## Limitations
 
