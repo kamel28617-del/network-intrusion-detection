@@ -1,4 +1,4 @@
-﻿# Network Intrusion Detection System (ML)
+# Network Intrusion Detection System (ML)
 
 Machine-learning NIDS trained on the CIC-IDS2017 dataset, with an interactive Streamlit dashboard for exploring detections, false alarms, and the effect of the alert threshold.
 
@@ -38,9 +38,9 @@ Attack classes are heavily imbalanced: Heartbleed (11 flows), Infiltration (36) 
 ## Methodology
 
 1. `src/data_loader.py`: load, normalize labels (a corrupted dash in the web-attack labels is fixed), cast to float32, deduplicate globally, cache to Parquet.
-2. `src/preprocess.py`: drop constant features; 70/30 split stratified on the full attack label.
+2. `src/preprocess.py`: drop constant features; 70/30 split stratified on the full attack label, then the training part is split again 75/25 (52.5% train, 17.5% validation, 30% test).
 3. `src/train.py`: binary detection (benign vs attack) with Random Forest (100 trees, depth 20) and HistGradientBoosting (200 iterations), both class-weighted.
-4. `src/analyze.py`: threshold sweep, PR curves, confusion matrices.
+4. `src/analyze.py`: threshold sweep, PR curves, confusion matrices; alert thresholds are chosen on the validation set and saved to `models/thresholds.json`.
 5. `src/unseen_attacks.py`: hold out one attack family at a time and compare the supervised Random Forest with an Isolation Forest trained only on benign traffic.
 6. `src/explain.py`: permutation importance on 30,000 test flows.
 
@@ -50,19 +50,19 @@ Attack classes are heavily imbalanced: Heartbleed (11 flows), Infiltration (36) 
 
 | | Random Forest | Hist Gradient Boosting |
 |---|---|---|
-| Precision | 99.51% | 98.91% |
-| Recall | 99.72% | 99.90% |
-| False positive rate | 0.09% | 0.20% |
-| Missed attacks | 285 | 98 |
-| False alarms | 495 | 1,116 |
+| Precision | 99.53% | 99.21% |
+| Recall | 99.67% | 99.92% |
+| False positive rate | 0.09% | 0.14% |
+| Missed attacks | 337 | 81 |
+| False alarms | 476 | 806 |
 
-The threshold matters more than the model. With a budget of 0.1% false alarms, Random Forest catches 99.77% of attacks and HistGradientBoosting 99.71%. Both thresholds were picked on the test set, so these figures are slightly optimistic.
+The threshold matters more than the model. I chose each threshold on a separate validation split to stay within a 0.1% false-alarm budget (Random Forest 0.474, HistGradientBoosting 0.715), then evaluated it once on the untouched test set. Random Forest catches 99.70% of attacks (299 missed, 535 false alarms) and HistGradientBoosting 99.81% (187 missed, 536 false alarms). The false-alarm rate on the test set (0.096%) stayed within the budget for both models.
 
 ![Confusion matrices](reports/figures/confusion_matrices.png)
 
 ### Weakest attack types (Random Forest, threshold 0.5)
 
-Bot 82.4%, Web Brute Force 92.5%. The very small classes (SQL injection 1 of 6, Infiltration 9 of 11, Heartbleed 3 of 3) are too small to draw conclusions from.
+Bot 81.7%, Web Brute Force 93.0%. The very small classes (SQL injection 1 of 6, Infiltration 9 of 11, Heartbleed 3 of 3) are too small to draw conclusions from.
 
 ### Unseen attack families
 
@@ -88,7 +88,7 @@ Features describing the server's replies (backward packet length, segment size, 
 
 - CIC-IDS2017 is from 2017 and was generated in a controlled lab; the models are not expected to work as-is on real networks.
 - The random split places similar flows from the same attack session in train and test, so the headline scores are an upper bound.
-- Thresholds were tuned on the test set; a separate validation split would be cleaner.
+- Validation and test come from the same random split, so the threshold transfer shown here is optimistic for real traffic.
 - Initial TCP window sizes may reflect lab machine configuration rather than attack behavior (not tested).
 - Rare classes cannot be evaluated reliably.
 - Detection is flow-based and offline; live packet capture is not implemented.
@@ -116,6 +116,6 @@ python -m venv .venv
 ## Possible next steps
 
 - Multi-class classification by attack type.
-- Validation split for threshold selection and cross-validation.
+- Cross-validation, ideally leave-one-day-out, to test generalization.
 - Live capture with controlled test traffic.
 - Drift monitoring and retraining.
