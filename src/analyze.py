@@ -1,4 +1,5 @@
-﻿from pathlib import Path
+import json
+from pathlib import Path
 
 import matplotlib
 
@@ -8,6 +9,8 @@ import pandas as pd
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix, precision_recall_curve, roc_curve
 
 PREDS_PATH = Path("data/processed/test_predictions.parquet")
+VAL_PREDS_PATH = Path("data/processed/val_predictions.parquet")
+THRESHOLDS_PATH = Path("models/thresholds.json")
 FIG_DIR = Path("reports/figures")
 MODELS = ["random_forest", "hist_gradient_boosting"]
 THRESHOLDS = [0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 0.9, 0.95, 0.99]
@@ -42,6 +45,9 @@ def main() -> None:
     FIG_DIR.mkdir(parents=True, exist_ok=True)
     df = pd.read_parquet(PREDS_PATH)
     y = df["is_attack"].to_numpy()
+    val = pd.read_parquet(VAL_PREDS_PATH)
+    y_val = val["is_attack"].to_numpy()
+    chosen = {}
 
     fig_pr, ax_pr = plt.subplots(figsize=(6, 5))
     fig_cm, axes = plt.subplots(1, len(MODELS), figsize=(11, 4.5))
@@ -54,8 +60,12 @@ def main() -> None:
         print(table.to_string(index=False))
         table.to_csv(FIG_DIR.parent / f"{name}_thresholds.csv", index=False)
 
-        thr, rec, fpr = best_recall_at_fpr(y, score)
-        print(f"Best recall with FPR <= 0.1%: {rec:.4f} at threshold {thr:.3f} (FPR {fpr:.5f})")
+        # Pick the threshold on the validation set, then report it once on the untouched test set
+        thr, val_rec, val_fpr = best_recall_at_fpr(y_val, val[f"{name}_score"].to_numpy())
+        tn, fp, fn, tp = confusion_matrix(y, (score >= thr).astype(int), labels=[0, 1]).ravel()
+        print(f"Threshold chosen on validation (FPR <= 0.1%): {thr:.3f} (val recall {val_rec:.4f}, val FPR {val_fpr:.5f})")
+        print(f"Same threshold on test: recall {tp / (tp + fn):.4f}, FPR {fp / (fp + tn):.5f}, missed {fn}, false alarms {fp}")
+        chosen[name] = thr
 
         p, r, _ = precision_recall_curve(y, score)
         ax_pr.plot(r, p, label=name)
@@ -81,7 +91,8 @@ def main() -> None:
 
     fig_cm.tight_layout()
     fig_cm.savefig(FIG_DIR / "confusion_matrices.png", dpi=150)
-    print(f"\nSaved figures to {FIG_DIR.resolve()}")
+    THRESHOLDS_PATH.write_text(json.dumps(chosen, indent=2))
+    print(f"\nSaved figures to {FIG_DIR.resolve()} and thresholds to {THRESHOLDS_PATH}")
 
 
 if __name__ == "__main__":

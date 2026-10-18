@@ -1,4 +1,4 @@
-﻿import json
+import json
 import time
 from pathlib import Path
 
@@ -7,10 +7,11 @@ from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassif
 
 from src.data_loader import load_clean
 from src.evaluate import binary_metrics, recall_by_family
-from src.preprocess import RANDOM_STATE, get_feature_cols, split_data
+from src.preprocess import RANDOM_STATE, get_feature_cols, split_data, split_train_val
 
 MODELS_DIR = Path("models")
 PREDS_PATH = Path("data/processed/test_predictions.parquet")
+VAL_PREDS_PATH = Path("data/processed/val_predictions.parquet")
 
 
 def main() -> None:
@@ -21,9 +22,11 @@ def main() -> None:
     print(f"{len(df):,} flows | {len(features)} features")
 
     train_df, test_df = split_data(df)
-    X_train, y_train = train_df[features], train_df["is_attack"]
+    fit_df, val_df = split_train_val(train_df)
+    X_train, y_train = fit_df[features], fit_df["is_attack"]
+    X_val = val_df[features]
     X_test, y_test = test_df[features], test_df["is_attack"]
-    print(f"Train: {len(train_df):,} | Test: {len(test_df):,}")
+    print(f"Train: {len(fit_df):,} | Validation: {len(val_df):,} | Test: {len(test_df):,}")
 
     models = {
         "random_forest": RandomForestClassifier(
@@ -46,6 +49,10 @@ def main() -> None:
     preds["Label"] = preds["Label"].astype(str)
     preds["day"] = preds["day"].astype(str)
 
+    val_preds = val_df[["Label", "day", "is_attack"]].reset_index(drop=True)
+    val_preds["Label"] = val_preds["Label"].astype(str)
+    val_preds["day"] = val_preds["day"].astype(str)
+
     for name, model in models.items():
         print(f"\n--- Training {name} ---")
         t0 = time.time()
@@ -65,11 +72,13 @@ def main() -> None:
 
         preds[f"{name}_score"] = score
         preds[f"{name}_pred"] = pred
+        val_preds[f"{name}_score"] = model.predict_proba(X_val)[:, 1]
         joblib.dump(model, MODELS_DIR / f"{name}.joblib", compress=3)
 
     (MODELS_DIR / "metrics.json").write_text(json.dumps(results, indent=2))
     (MODELS_DIR / "features.json").write_text(json.dumps(features, indent=2))
     preds.to_parquet(PREDS_PATH)
+    val_preds.to_parquet(VAL_PREDS_PATH)
     print(f"\nSaved models, metrics and test predictions ({PREDS_PATH}).")
 
 
